@@ -1,0 +1,108 @@
+version: '{{version}}'
+services:
+
+  {% for key,value in preload_docker.items() %}
+  
+  {{key}}:
+
+      image: {{value['image']}}
+      hostname: {{key}}
+      container_name: {{key}}
+      
+      working_dir: {{value['working_dir']}}
+      command: {{value['command']}}
+
+      volumes:
+      {% for item in value['volumes'] %}
+        - {{item}}
+      {%endfor%}
+      
+      networks:
+        {% for item in value['networks'] %}
+        - {{item}}
+      {%endfor%}  
+
+  {% endfor %}
+
+  {% for key,value in es.items() %}
+  
+  {{key}}:
+
+      image: {{value['image']}}
+      hostname: {{key}}
+      container_name: {{key}}
+      ports: 
+      {% for item in value['ports'] %}
+      - "{{item}}"
+      {%endfor%}
+      
+      environment:
+              - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      {% for key,value in value['environment'].items() %}
+        - {{key}}={{value}}
+      {%endfor%}
+      
+      volumes:
+      {% for item in value['volumes'] %}
+        - {{item}}
+      {%endfor%}
+
+      ulimits:
+        memlock:
+          soft: -1
+          hard: -1
+
+      networks:
+        {% for item in value['networks'] %}
+        - {{item}}
+      {%endfor%}  
+
+      healthcheck:
+      {% for key,value in value['healthcheck'].items() %}
+        {{key}} : {{value}}
+      {%endfor%}
+
+  {% endfor %}
+
+  {% for key,value in kibana.items() %}
+
+  {{key}}:
+
+      image: {{value['image']}}
+      container_name: {{key}}
+      hostname: {{key}}
+      ports: 
+      {% for item in value['ports'] %}
+      - "{{item}}"
+      {%endfor%}
+      
+      environment:
+      {% for key,value in value['environment'].items() %}
+        {{key}} : {{value}}
+      {%endfor%}
+      
+      volumes:
+      {% for item in value['volumes'] %}
+        - {{item}}
+      {%endfor%}
+
+      depends_on:
+      {% for item in value['depends_on'] %}
+        - {{item}}
+      {%endfor%}
+
+      networks:
+        {% for item in value['networks'] %}
+        - {{item}}
+      {%endfor%} 
+
+    {% endfor %}
+
+
+  {# volumes:
+    data01:
+      driver: local #}
+
+networks:
+  {{network_name}}:
+    driver: bridge

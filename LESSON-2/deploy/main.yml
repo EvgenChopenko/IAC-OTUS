@@ -1,0 +1,161 @@
+---
+- hosts: 
+    - elk
+  gather_facts: False
+  become: true
+  vars:
+    location: imaqliq
+    version: '3'
+    #home dir 
+    home_dir : '/opt/elastic/'
+    node_name: 'es1'
+    # working_dir
+    working_dir: "/usr/share/elasticsearch"
+
+    # Path into Container 
+    volume_path_certs: '/usr/share/elasticsearch/config/certificates'
+    volume_path_esdata: '/usr/share/elasticsearch/data'
+    volume_path_certs_tmp: '/certs'
+    # local path by maping in volume 
+    local_path_certs: './certs'
+    local_path_esdate: './esdata'
+
+
+
+    # Volume
+    volume_certs : '{{local_path_certs}}:{{ volume_path_certs}}'
+    volume_esdate : '{{local_path_esdate}}:{{volume_path_esdata}}'
+    volume_tmp_certs : '{{local_path_certs}}:{{ volume_path_certs_tmp }}'
+    volume_instances: '.:{{volume_path_certs}}'
+    # Network
+    network_name : 'elk'
+    # 
+    image_version: 7.10.1
+    image_elasticsearch : 'docker.elastic.co/elasticsearch/elasticsearch:{{image_version}}'
+    image_kibana: 'docker.elastic.co/kibana/kibana:{{image_version}}'
+
+    instances: {
+      "es1": {
+        "dns": [localhost,es1]
+      },
+      "kibana":{
+        "dns":[localhost,kibana]
+      }
+    }
+
+
+
+    preload_docker: {
+      "create_certs" : {
+              "image" : "{{image_elasticsearch}}",
+              "command": " 
+                  bash -c '
+                    yum install -y -q -e 0 unzip;
+                    if [[ ! -f /certs/bundle.zip ]]; then
+                      bin/elasticsearch-certutil cert --silent --pem --in config/certificates/instances.yml -out /certs/bundle.zip;
+                      unzip /certs/bundle.zip -d /certs; 
+                    fi;
+                    chown -R 1000:0 /certs
+                  '
+              ",
+              "working_dir":"{{working_dir}}",
+              "volumes":['{{volume_tmp_certs}}','{{volume_instances}}'],
+              "networks":['{{network_name}}']
+            }
+    }   
+    es: {
+            es1 : {
+            "image": "{{image_elasticsearch}}",
+            "ports": ["9200:9200"],
+            "depends_on": [create_certs],
+            "environment": {
+                          "cluster.name": "cluster_name",
+                          "discovery.type": "single-node",
+                          "node.name": "{{ node_name }}",
+                          "bootstrap.memory_lock": "true",
+                          "ELASTICSEARCH_USERNAME":"elastic",
+                          "ELASTIC_PASSWORD": "elastic", # password for default user: elastic 
+                          "xpack.license.self_generated.type": "basic",  # <1>
+                          "xpack.security.enabled": "true",     
+                          "xpack.security.http.ssl.enabled": "true", # <2>
+                          "xpack.security.http.ssl.key": "{{volume_path_certs}}/{{node_name}}/{{node_name}}.key",
+                          "xpack.security.http.ssl.certificate_authorities": "{{volume_path_certs}}/ca/ca.crt",
+                          "xpack.security.http.ssl.certificate": "{{volume_path_certs}}/{{node_name}}/{{node_name}}.crt",
+                          "xpack.security.transport.ssl.enabled": "true", # <3>
+                          "xpack.security.transport.ssl.verification_mode":"certificate", # <4>
+                          "xpack.security.transport.ssl.certificate_authorities": "{{volume_path_certs}}/ca/ca.crt",
+                          "xpack.security.transport.ssl.certificate": "{{volume_path_certs}}/{{node_name}}/{{node_name}}.crt",
+                          "xpack.security.transport.ssl.key": "{{volume_path_certs}}/{{node_name}}/{{node_name}}.key"
+                          },
+            "ulimits":{
+              "memlock":{
+                "soft": "-1",
+                "hard": "-1"
+                }},
+            "volumes": ['{{volume_esdate}}', '{{volume_certs}}'],
+            "networks":['{{network_name}}'],
+            "healthcheck":{
+                "test": "curl --cacert /usr/share/elasticsearch/config/certificates/ca/ca.crt -s https://localhost:9200 >/dev/null; if [[ $$? == 52 ]]; then echo 0; else echo 1; fi",
+                "interval": "30s",
+                "timeout" : "10s",
+                "retries": "5"
+            }
+      }
+    }
+
+    kibana: {
+        "kibana":{
+          "image": "{{image_kibana}}", 
+          "ports":["5601:5601"],
+          "environment":{
+                "SERVERNAME": "localhost",
+                "ELASTICSEARCH_USERNAME": "elastic",
+                "ELASTICSEARCH_PASSWORD":"elastic",
+                "ELASTICSEARCH_URL": "https://{{node_name}}:9200",
+                "ELASTICSEARCH_HOSTS": "https://{{node_name}}:9200",
+                "ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES": "{{volume_path_certs}}/ca/ca.crt",
+                "SERVER_SSL_ENABLED": "\"true\"",
+                "SERVER_SSL_KEY" : "{{volume_path_certs}}/kibana/kibana.key",
+                "SERVER_SSL_CERTIFICATE":"/usr/share/elasticsearch/config/certificates/kibana/kibana.crt"
+          },
+          "volumes": [
+          '{{volume_certs}}',
+        ],
+        "depends_on": [create_certs,"{{node_name}}"],
+                "networks":['{{network_name}}']
+        }
+      }
+
+  tasks:
+    - name: Create /opt
+      file:
+        path: /opt
+        state: directory
+        mode: '0755'
+
+    - name: Create a work directory
+      file:
+        path: "{{home_dir}}"
+        state: directory
+        mode: '0755'
+    
+    
+    - name: Copy temp file
+      template:
+        src: "templates/docker-compose.j2"
+        dest: "{{home_dir}}docker-compose.yaml"
+
+    - name: Copy temp file instance
+      template:
+        src: "templates/instances.j2"
+        dest: "{{home_dir}}instances.yml"
+
+    - name: Create and start services
+      become: yes
+      shell : |
+        chmod 777 -R /opt/elastic/esdata
+        cd "{{home_dir}}"
+        docker-compose down
+        docker-compose up -d 
+        exit 0
+      

@@ -1,0 +1,11 @@
+instances:
+
+{% for key,value in instances.items() %}
+
+- name: {{key}}
+  dns: 
+  {% for item in value['dns'] %}
+      - "{{item}}"
+  {%endfor%}
+
+{%endfor%}
