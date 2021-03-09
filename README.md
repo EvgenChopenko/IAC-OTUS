@@ -14,6 +14,11 @@
   Для разворачивания используться облоко YACLOUD. 
 ```
 ### /LESSON-2
+
+## LESSON-3
+Написать тесты для тестирования кода Terraform из ДЗ1
+Цель: Написать тесты для тестирования кода Terraform из ДЗ1 ===> LESSON2 
+
 ##### RESOURCE
     <https://www.elastic.co/guide/en/elasticsearch/reference/current/docker.html>
   
